@@ -8,6 +8,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest # Aqui o GitHub liga o PC Windows virtual
@@ -19,7 +22,7 @@ jobs:
     - name: Instalar Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 20
+        node-version: 24
 
     - name: Instalar Dependências do Projeto
       run: npm install
