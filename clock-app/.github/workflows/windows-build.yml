@@ -1,0 +1,35 @@
+name: Compilar Tauri para Windows
+
+# Isso diz ao GitHub para rodar a receita sempre que você salvar (push) 
+# na branch 'main', ou quando você clicar no botão de rodar manualmente.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest # Aqui o GitHub liga o PC Windows virtual
+
+    steps:
+    - name: Baixar o código
+      uses: actions/checkout@v4
+
+    - name: Instalar Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Instalar Dependências do Projeto
+      run: npm install
+
+    - name: Compilar o App e Gerar o .exe
+      uses: tauri-apps/tauri-action@v0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tagName: app-v__VERSION__ # O Tauri pega a versão do seu tauri.conf.json
+        releaseName: 'Despertador v__VERSION__'
+        releaseDraft: true # Cria um rascunho de lançamento com os arquivos
+        prerelease: false
