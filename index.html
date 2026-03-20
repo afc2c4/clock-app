@@ -181,6 +181,111 @@
     /* Win screen */
     .win-trophy { font-size: 3rem; margin: 10px 0 4px 0; }
     .win-text   { font-size: 1.15rem; color: #61dafb; margin: 4px 0 18px 0; }
+
+    /* Audio config */
+    .audio-config {
+      margin-top: 14px;
+      border: 1px solid #444;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .audio-config summary {
+      padding: 8px 12px;
+      cursor: pointer;
+      background: #3a3a5c;
+      color: #ccc;
+      font-size: 0.9rem;
+      user-select: none;
+      list-style: none;
+    }
+    .audio-config summary::-webkit-details-marker { display: none; }
+    .audio-config summary:hover { background: #4a4a6c; }
+    .audio-config-inner {
+      padding: 12px;
+      background: #2a2a40;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: left;
+    }
+    .audio-config-inner > label {
+      font-size: 0.82rem;
+      color: #aaa;
+      margin: 0;
+    }
+    .audio-input-row {
+      display: flex;
+      gap: 6px;
+    }
+    .audio-input-row input[type="url"] {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 0.85rem;
+      background: #1a1a2e;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 4px;
+      width: auto;
+      margin: 0;
+      text-align: left;
+    }
+    .audio-input-row button {
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      width: auto;
+      margin: 0;
+      background: #61dafb;
+      color: #282c34;
+    }
+    .audio-or {
+      text-align: center;
+      color: #666;
+      font-size: 0.78rem;
+      margin: 2px 0;
+    }
+    #audio-file-input {
+      font-size: 0.82rem;
+      color: #ccc;
+      background: transparent;
+      border: none;
+      padding: 2px 0;
+      width: 100%;
+      cursor: pointer;
+      margin: 0;
+      height: auto;
+    }
+    .audio-current {
+      font-size: 0.78rem;
+      color: #888;
+      font-style: italic;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin: 0;
+    }
+    .audio-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .btn-preview {
+      background: #27ae60 !important;
+      color: #fff !important;
+      font-size: 0.82rem !important;
+      padding: 6px 12px !important;
+      width: auto !important;
+      margin: 0 !important;
+    }
+    .btn-preview:hover { background: #1e8449 !important; }
+    .btn-reset-audio {
+      background: #555 !important;
+      color: #ccc !important;
+      font-size: 0.82rem !important;
+      padding: 6px 12px !important;
+      width: auto !important;
+      margin: 0 !important;
+    }
+    .btn-reset-audio:hover { background: #666 !important; }
   </style>
 </head>
 <body>
@@ -192,6 +297,25 @@
     <input type="time" id="alarm-time">
     <button onclick="setAlarm()">Ativar Alarme</button>
     <p id="alarm-status">Nenhum alarme definido.</p>
+
+    <details class="audio-config" id="audio-config-section">
+      <summary>🔊 Personalizar som do alarme</summary>
+      <div class="audio-config-inner">
+        <label>URL do áudio (MP3, OGG, WAV, etc.):</label>
+        <div class="audio-input-row">
+          <input type="url" id="audio-url-input" placeholder="https://exemplo.com/audio.mp3">
+          <button type="button" onclick="applyAudioUrl()">Usar</button>
+        </div>
+        <div class="audio-or">— ou —</div>
+        <label>Arquivo local:</label>
+        <input type="file" id="audio-file-input" accept="audio/*" onchange="applyAudioFile(this)">
+        <p class="audio-current" id="audio-current">Som atual: padrão</p>
+        <div class="audio-actions">
+          <button type="button" class="btn-preview" onclick="previewAudio()">▶ Testar</button>
+          <button type="button" class="btn-reset-audio" onclick="resetAudio()">↺ Restaurar padrão</button>
+        </div>
+      </div>
+    </details>
   </div>
 
   <div class="modal-overlay" id="alarm-modal">
@@ -244,7 +368,8 @@
     // ===================== ALARME =====================
     let alarmTime = null;
     let alarmInterval = null;
-    const alarmSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    const DEFAULT_AUDIO_SRC = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
+    const alarmSound = new Audio(DEFAULT_AUDIO_SRC);
     alarmSound.loop = true;
 
     setInterval(() => {
@@ -294,6 +419,48 @@
       const t = alarmTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       document.getElementById('alarm-status').innerText = `Soneca ativada. Retornará às ${t}.`;
       alarmInterval = setInterval(checkAlarm, 1000);
+    }
+
+    // ===================== ÁUDIO PERSONALIZADO =====================
+    let customObjectUrl = null;
+
+    function applyAudioUrl() {
+      const urlInput = document.getElementById('audio-url-input');
+      const url = urlInput.value.trim();
+      if (!url) { alert('Informe uma URL válida.'); return; }
+      if (customObjectUrl) { URL.revokeObjectURL(customObjectUrl); customObjectUrl = null; }
+      alarmSound.src = url;
+      alarmSound.load();
+      setAudioCurrentLabel(url.length > 40 ? url.slice(0, 37) + '…' : url);
+    }
+
+    function applyAudioFile(input) {
+      const file = input.files[0];
+      if (!file) return;
+      if (customObjectUrl) URL.revokeObjectURL(customObjectUrl);
+      customObjectUrl = URL.createObjectURL(file);
+      alarmSound.src = customObjectUrl;
+      alarmSound.load();
+      setAudioCurrentLabel(file.name);
+    }
+
+    function resetAudio() {
+      if (customObjectUrl) { URL.revokeObjectURL(customObjectUrl); customObjectUrl = null; }
+      alarmSound.src = DEFAULT_AUDIO_SRC;
+      alarmSound.load();
+      document.getElementById('audio-url-input').value = '';
+      document.getElementById('audio-file-input').value = '';
+      setAudioCurrentLabel('padrão');
+    }
+
+    function setAudioCurrentLabel(name) {
+      document.getElementById('audio-current').textContent = 'Som atual: ' + name;
+    }
+
+    function previewAudio() {
+      alarmSound.currentTime = 0;
+      alarmSound.play().catch(() => alert('Não foi possível reproduzir. Verifique a URL ou o arquivo.'));
+      setTimeout(() => { alarmSound.pause(); alarmSound.currentTime = 0; }, 4000);
     }
 
     // ===================== TETRIS =====================
