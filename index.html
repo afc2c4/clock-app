@@ -372,6 +372,37 @@
     const alarmSound = new Audio(DEFAULT_AUDIO_SRC);
     alarmSound.loop = true;
 
+    // ===================== WAKE LOCK (anti-hibernação) =====================
+    let _wakeLock = null;
+
+    async function requestWakeLock() {
+      // Camada 1: Screen Wake Lock API (WebView2 no Windows, WKWebView no macOS)
+      if ('wakeLock' in navigator) {
+        try {
+          _wakeLock = await navigator.wakeLock.request('screen');
+          _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+        } catch (_) { /* não suportado ou permissão negada */ }
+      }
+      // Camada 2: processo OS via Tauri (systemd-inhibit no Linux, caffeinate no macOS)
+      if (window.__TAURI__) {
+        try { await window.__TAURI__.core.invoke('start_keep_awake'); } catch (_) {}
+      }
+    }
+
+    async function releaseWakeLock() {
+      if (_wakeLock) { try { await _wakeLock.release(); } catch (_) {} _wakeLock = null; }
+      if (window.__TAURI__) {
+        try { await window.__TAURI__.core.invoke('stop_keep_awake'); } catch (_) {}
+      }
+    }
+
+    // Re-adquire o lock caso o SO o revogue (ex.: o usuário muda de janela)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && alarmTime !== null && _wakeLock === null) {
+        requestWakeLock();
+      }
+    });
+
     setInterval(() => {
       document.getElementById('current-time').innerText =
         new Date().toLocaleTimeString('pt-BR');
@@ -390,6 +421,7 @@
       document.getElementById('alarm-status').innerText = `Alarme definido para as ${inputTime}.`;
       if (alarmInterval) clearInterval(alarmInterval);
       alarmInterval = setInterval(checkAlarm, 1000);
+      requestWakeLock(); // mantém a tela/sistema acordado enquanto aguarda
     }
 
     function checkAlarm() {
@@ -411,6 +443,7 @@
       stopTetris();
       document.getElementById('alarm-modal').style.display = 'none';
       document.getElementById('alarm-status').innerText = 'Alarme encerrado.';
+      releaseWakeLock(); // libera o inibidor de sleep
     }
 
     function snooze() {
