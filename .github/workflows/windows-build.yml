@@ -1,4 +1,4 @@
-name: Compilar Tauri para Windows
+name: Compilar e Publicar Tauri para Windows
 
 # Isso diz ao GitHub para rodar a receita sempre que você salvar (push) 
 # na branch 'main', ou quando você clicar no botão de rodar manualmente.
@@ -24,15 +24,35 @@ jobs:
       with:
         node-version: 24
 
+    - name: Instalar Rust
+      uses: dtolnay/rust-toolchain@stable
+
     - name: Instalar Dependências do Projeto
       run: npm install
+
+    - name: Gerar versão incremental do app
+      shell: pwsh
+      run: |
+        $version = "0.1.${{ github.run_number }}"
+
+        $package = Get-Content package.json -Raw | ConvertFrom-Json
+        $package.version = $version
+        $package | ConvertTo-Json -Depth 100 | Set-Content package.json
+
+        $tauri = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+        $tauri.version = $version
+        $tauri | ConvertTo-Json -Depth 100 | Set-Content src-tauri/tauri.conf.json
+
+        "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Compilar o App e Gerar o .exe
       uses: tauri-apps/tauri-action@v0
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       with:
-        tagName: app-v__VERSION__ # O Tauri pega a versão do seu tauri.conf.json
-        releaseName: 'Despertador v__VERSION__'
-        releaseDraft: true # Cria um rascunho de lançamento com os arquivos
+        tagName: app-v${{ env.APP_VERSION }}
+        releaseName: 'Despertador v${{ env.APP_VERSION }}'
+        releaseDraft: false
         prerelease: false

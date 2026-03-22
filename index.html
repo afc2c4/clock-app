@@ -286,6 +286,42 @@
       margin: 0 !important;
     }
     .btn-reset-audio:hover { background: #666 !important; }
+
+    .update-panel {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #444;
+    }
+
+    .update-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .update-status {
+      margin: 0;
+      font-size: 0.82rem;
+      color: #999;
+      text-align: left;
+      flex: 1;
+    }
+
+    .update-status.success { color: #7ddf91; }
+    .update-status.error { color: #ff8f8f; }
+
+    .btn-update {
+      width: auto !important;
+      margin: 0 !important;
+      padding: 8px 12px !important;
+      font-size: 0.84rem !important;
+      background: #f4d35e !important;
+      color: #2d3142 !important;
+      white-space: nowrap;
+    }
+
+    .btn-update:hover { background: #e9c445 !important; }
   </style>
 </head>
 <body>
@@ -297,6 +333,15 @@
     <input type="time" id="alarm-time">
     <button onclick="setAlarm()">Ativar Alarme</button>
     <p id="alarm-status">Nenhum alarme definido.</p>
+
+    <div class="update-panel" id="update-panel">
+      <div class="update-row">
+        <p class="update-status" id="update-status">Atualizações automáticas: aguardando app desktop.</p>
+        <button type="button" class="btn-update" id="btn-check-update" onclick="manualCheckForUpdates()">
+          Atualizar app
+        </button>
+      </div>
+    </div>
 
     <details class="audio-config" id="audio-config-section">
       <summary>🔊 Personalizar som do alarme</summary>
@@ -374,6 +419,7 @@
 
     // ===================== WAKE LOCK (anti-hibernação) =====================
     let _wakeLock = null;
+    let _updateCheckInFlight = false;
 
     async function requestWakeLock() {
       // Camada 1: Screen Wake Lock API (WebView2 no Windows, WKWebView no macOS)
@@ -403,6 +449,48 @@
       }
     });
 
+    function setUpdateStatus(text, tone = '') {
+      const statusEl = document.getElementById('update-status');
+      statusEl.textContent = text;
+      statusEl.className = 'update-status' + (tone ? ' ' + tone : '');
+    }
+
+    async function runAutoUpdate(showUpToDateMessage = false) {
+      const button = document.getElementById('btn-check-update');
+      if (!window.__TAURI__) {
+        button.style.display = 'none';
+        setUpdateStatus('Atualizações automáticas só funcionam no app instalado.', '');
+        return;
+      }
+      if (_updateCheckInFlight) return;
+
+      _updateCheckInFlight = true;
+      button.disabled = true;
+      setUpdateStatus('Verificando atualizações...', '');
+
+      try {
+        const result = await window.__TAURI__.core.invoke('install_available_update');
+        if (result.status === 'installed') {
+          const nextVersion = result.version ? ' ' + result.version : '';
+          setUpdateStatus('Atualização' + nextVersion + ' instalada. Feche e abra o app para usar a versão nova.', 'success');
+        } else if (showUpToDateMessage) {
+          setUpdateStatus('Você já está na versão mais recente (' + result.currentVersion + ').', '');
+        } else {
+          setUpdateStatus('Atualizações automáticas ativas. Versão atual: ' + result.currentVersion + '.', '');
+        }
+      } catch (error) {
+        const message = error && error.toString ? error.toString() : 'falha desconhecida';
+        setUpdateStatus('Falha ao atualizar: ' + message, 'error');
+      } finally {
+        button.disabled = false;
+        _updateCheckInFlight = false;
+      }
+    }
+
+    async function manualCheckForUpdates() {
+      await runAutoUpdate(true);
+    }
+
     setInterval(() => {
       document.getElementById('current-time').innerText =
         new Date().toLocaleTimeString('pt-BR');
@@ -410,6 +498,7 @@
 
       // Abre o desafio imediatamente ao carregar
       window.addEventListener('DOMContentLoaded', () => triggerAlarm());
+      window.addEventListener('DOMContentLoaded', () => runAutoUpdate(false));
 
     function setAlarm() {
       const inputTime = document.getElementById('alarm-time').value;

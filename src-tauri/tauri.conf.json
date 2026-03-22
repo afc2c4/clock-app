@@ -22,9 +22,21 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/afc2c4/clock-app/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5RWtNR0dkSmtkWUNnRUQ0dXBtSlo0OE9tdUN1MVRjK2NuT1JBM0lxU0F5VUFBQkFBQUFBQUFBQUFBQUlBQUFBQWFIamc1RHZ0M1JmdVVpVG44bUJIQ29Ga2lROTdhUy9TMkgxalMxU3lGcWZUK0pvSE5VU2pWVjY4SUdZdkV0TVNuQ2IxZWtSejBvcWRLUmRKckxvVXhTdHVQWDl0WlYwa3lpVnZ2TkYrTHFvOG93elZlQXFKaStGQmlwenJacURNOVFOQTRBdUlNNW89Cg==",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

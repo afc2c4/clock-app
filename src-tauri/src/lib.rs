@@ -1,8 +1,18 @@
 use std::sync::Mutex;
+use tauri_plugin_updater::UpdaterExt;
 
 // ─── Keep-awake state ────────────────────────────────────────────────────────
 
 pub struct KeepAwakeState(pub Mutex<Option<std::process::Child>>);
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateResult {
+    status: &'static str,
+    current_version: String,
+    version: Option<String>,
+    notes: Option<String>,
+}
 
 /// Spawns a background OS process that holds a sleep/idle inhibitor lock.
 /// On Windows this is a no-op (the Screen Wake Lock API handles it in JS).
@@ -58,6 +68,36 @@ fn stop_keep_awake(state: tauri::State<KeepAwakeState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn install_available_update(app: tauri::AppHandle) -> Result<UpdateResult, String> {
+    let current_version = app.package_info().version.to_string();
+    let updater = app.updater().map_err(|e| e.to_string())?;
+
+    if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
+        let version = update.version.clone();
+        let notes = update.body.clone();
+
+        update
+            .download_and_install(|_, _| {}, || {})
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(UpdateResult {
+            status: "installed",
+            current_version,
+            version: Some(version),
+            notes,
+        })
+    } else {
+        Ok(UpdateResult {
+            status: "up-to-date",
+            current_version,
+            version: None,
+            notes: None,
+        })
+    }
+}
+
 // ─── Original greet command (kept for reference) ─────────────────────────────
 
 #[tauri::command]
@@ -70,12 +110,19 @@ fn greet(name: &str) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .manage(KeepAwakeState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             greet,
             start_keep_awake,
-            stop_keep_awake
+            stop_keep_awake,
+            install_available_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
