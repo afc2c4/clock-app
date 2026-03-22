@@ -263,6 +263,39 @@
       text-overflow: ellipsis;
       margin: 0;
     }
+    .audio-output-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    #audio-output-select {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 0.85rem;
+      background: #1a1a2e;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 4px;
+      width: auto;
+      margin: 0;
+    }
+    .btn-output {
+      padding: 6px 10px !important;
+      font-size: 0.8rem !important;
+      width: auto !important;
+      margin: 0 !important;
+      background: #3f7cac !important;
+      color: #fff !important;
+      white-space: nowrap;
+    }
+    .btn-output:hover { background: #356b95 !important; }
+    .audio-output-status {
+      margin: 0;
+      font-size: 0.76rem;
+      color: #8fa6bd;
+    }
+    .audio-output-status.error { color: #ff8f8f; }
+    .audio-output-status.success { color: #7ddf91; }
     .audio-actions {
       display: flex;
       gap: 6px;
@@ -355,6 +388,16 @@
         <label>Arquivo local:</label>
         <input type="file" id="audio-file-input" accept="audio/*" onchange="applyAudioFile(this)">
         <p class="audio-current" id="audio-current">Som atual: padrão</p>
+
+        <label>Saída de áudio preferida:</label>
+        <div class="audio-output-row">
+          <select id="audio-output-select" onchange="onAudioOutputChanged()">
+            <option value="">Dispositivo padrão do sistema</option>
+          </select>
+          <button type="button" class="btn-output" onclick="requestAudioPermissionAndRefreshOutputs()">Liberar saídas</button>
+        </div>
+        <p class="audio-output-status" id="audio-output-status">Saída: padrão do sistema.</p>
+
         <div class="audio-actions">
           <button type="button" class="btn-preview" onclick="previewAudio()">▶ Testar</button>
           <button type="button" class="btn-reset-audio" onclick="resetAudio()">↺ Restaurar padrão</button>
@@ -416,6 +459,145 @@
     const DEFAULT_AUDIO_SRC = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
     const alarmSound = new Audio(DEFAULT_AUDIO_SRC);
     alarmSound.loop = true;
+
+    const SPEAKER_KEYWORDS = [
+      'speaker', 'speakers', 'alto-falante', 'caixa', 'caixas', 'soundbar', 'monitor'
+    ];
+    const HEADPHONE_KEYWORDS = [
+      'headphone', 'headphones', 'fone', 'fones', 'earphone', 'earbuds', 'headset'
+    ];
+    const AUDIO_OUTPUT_STORAGE_KEY = 'alarm_audio_output_device_id';
+
+    function scoreAudioOutputDevice(label) {
+      const l = (label || '').toLowerCase();
+      let score = 0;
+      if (!l) return score;
+      if (SPEAKER_KEYWORDS.some(k => l.includes(k))) score += 10;
+      if (HEADPHONE_KEYWORDS.some(k => l.includes(k))) score -= 10;
+      if (l.includes('default')) score += 1;
+      return score;
+    }
+
+    function setAudioOutputStatus(text, tone = '') {
+      const el = document.getElementById('audio-output-status');
+      el.textContent = text;
+      el.className = 'audio-output-status' + (tone ? ' ' + tone : '');
+    }
+
+    function supportsAudioOutputSelection() {
+      return !!(navigator.mediaDevices && typeof alarmSound.setSinkId === 'function');
+    }
+
+    function getStoredAudioOutputId() {
+      try { return localStorage.getItem(AUDIO_OUTPUT_STORAGE_KEY) || ''; } catch (_) { return ''; }
+    }
+
+    function storeAudioOutputId(deviceId) {
+      try {
+        if (deviceId) localStorage.setItem(AUDIO_OUTPUT_STORAGE_KEY, deviceId);
+        else localStorage.removeItem(AUDIO_OUTPUT_STORAGE_KEY);
+      } catch (_) {}
+    }
+
+    async function applyAudioOutputDevice(deviceId, remember = true) {
+      if (!supportsAudioOutputSelection()) return false;
+      try {
+        const sinkId = deviceId || '';
+        await alarmSound.setSinkId(sinkId);
+        if (remember) storeAudioOutputId(deviceId);
+        if (sinkId) setAudioOutputStatus('Saída definida para dispositivo selecionado.', 'success');
+        else setAudioOutputStatus('Saída: padrão do sistema.');
+        return true;
+      } catch (_) {
+        setAudioOutputStatus('Não foi possível alterar a saída de áudio neste navegador.', 'error');
+        return false;
+      }
+    }
+
+    function bestSpeakerDevice(outputs) {
+      if (!outputs.length) return null;
+      const ranked = outputs
+        .map(d => ({ device: d, score: scoreAudioOutputDevice(d.label) }))
+        .sort((a, b) => b.score - a.score);
+      return ranked[0]?.device || null;
+    }
+
+    async function refreshAudioOutputOptions() {
+      const select = document.getElementById('audio-output-select');
+      if (!supportsAudioOutputSelection()) {
+        select.disabled = true;
+        setAudioOutputStatus('Seu navegador não permite escolher saída de áudio por app.', 'error');
+        return [];
+      }
+
+      let outputs = [];
+      try {
+        outputs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput');
+      } catch (_) {
+        setAudioOutputStatus('Não foi possível listar saídas de áudio.', 'error');
+        return [];
+      }
+
+      const previous = select.value;
+      select.innerHTML = '';
+
+      const systemOption = document.createElement('option');
+      systemOption.value = '';
+      systemOption.textContent = 'Dispositivo padrão do sistema';
+      select.appendChild(systemOption);
+
+      outputs.forEach((d, idx) => {
+        const option = document.createElement('option');
+        option.value = d.deviceId;
+        option.textContent = d.label || `Saída de áudio ${idx + 1}`;
+        select.appendChild(option);
+      });
+
+      select.disabled = false;
+
+      const storedId = getStoredAudioOutputId();
+      const candidate = [storedId, previous].find(id => id && outputs.some(d => d.deviceId === id)) || '';
+      select.value = candidate;
+
+      return outputs;
+    }
+
+    async function requestAudioPermissionAndRefreshOutputs() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setAudioOutputStatus('Navegador sem suporte para liberar lista de dispositivos.', 'error');
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop());
+        await refreshAudioOutputOptions();
+        setAudioOutputStatus('Lista de saídas liberada. Selecione a caixa de som.', 'success');
+      } catch (_) {
+        setAudioOutputStatus('Permissão de áudio negada. Não dá para distinguir fone/caixa.', 'error');
+      }
+    }
+
+    async function onAudioOutputChanged() {
+      const select = document.getElementById('audio-output-select');
+      await applyAudioOutputDevice(select.value, true);
+    }
+
+    async function tryRouteAlarmToSpeakers() {
+      if (!supportsAudioOutputSelection()) return;
+      const outputs = await refreshAudioOutputOptions();
+      if (!outputs.length) return;
+
+      const storedId = getStoredAudioOutputId();
+      const stored = outputs.find(d => d.deviceId === storedId);
+      const chosen = stored || bestSpeakerDevice(outputs);
+      if (!chosen) return;
+
+      await applyAudioOutputDevice(chosen.deviceId, true);
+
+      const select = document.getElementById('audio-output-select');
+      select.value = chosen.deviceId;
+    }
 
     // ===================== WAKE LOCK (anti-hibernação) =====================
     let _wakeLock = null;
@@ -499,14 +681,18 @@
       // Abre o desafio imediatamente ao carregar
       window.addEventListener('DOMContentLoaded', () => triggerAlarm());
       window.addEventListener('DOMContentLoaded', () => runAutoUpdate(false));
+      window.addEventListener('DOMContentLoaded', () => refreshAudioOutputOptions());
 
-    function setAlarm() {
+    async function setAlarm() {
       const inputTime = document.getElementById('alarm-time').value;
       if (!inputTime) { alert('Por favor, selecione um horário!'); return; }
       const now = new Date();
       const [h, m] = inputTime.split(':');
       alarmTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), +h, +m, 0);
       if (alarmTime < now) alarmTime.setDate(alarmTime.getDate() + 1);
+
+      await tryRouteAlarmToSpeakers();
+
       document.getElementById('alarm-status').innerText = `Alarme definido para as ${inputTime}.`;
       if (alarmInterval) clearInterval(alarmInterval);
       alarmInterval = setInterval(checkAlarm, 1000);
